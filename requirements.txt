@@ -8,3 +8,7 @@ pandas
 seaborn
 graphviz
 tqdm
+fastapi
+uvicorn
+python-multipart
+shap

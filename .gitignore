@@ -1,0 +1,23 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Dataset folder and archives (too large for Git)
+LA/
+LA.zip
+*.zip
+*.tar.gz
+
+# Virtual environment
+spoof_env/
+venv/
+env/
+.env
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

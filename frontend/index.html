@@ -1,0 +1,2992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Spoofed Speech Attribution — Live Inspector</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+>
+
+<style>
+
+:root {
+    --bg: #f7f9fc;
+    --card: #ffffff;
+    --line: #e3e9f2;
+    --text: #162033;
+    --muted: #667085;
+    --blue: #2563eb;
+    --blue2: #dbeafe;
+    --red: #dc2626;
+    --green: #059669;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: Inter, sans-serif;
+}
+
+.mono {
+    font-family: "JetBrains Mono", monospace;
+}
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: 0 8px 30px rgba(25, 45, 80, 0.06);
+}
+
+/* ---------------------------------------------------------
+   160-D MATRIX
+--------------------------------------------------------- */
+
+.grid160 {
+    display: grid;
+    grid-template-columns: repeat(16, minmax(30px, 1fr));
+    gap: 5px;
+}
+
+.matrix-cell {
+    aspect-ratio: 1 / 1;
+    border: 1px solid rgba(100, 116, 139, 0.18);
+    border-radius: 7px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    font: 600 10px "JetBrains Mono";
+
+    cursor: pointer;
+
+    transition: 0.15s;
+}
+
+.matrix-cell:hover {
+    transform: scale(1.08);
+    z-index: 2;
+}
+
+/* ---------------------------------------------------------
+   PROGRESS
+--------------------------------------------------------- */
+
+.progress {
+    height: 7px;
+    background: #edf1f7;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.progress > div {
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        #2563eb,
+        #7c3aed
+    );
+
+    border-radius: 999px;
+}
+
+/* ---------------------------------------------------------
+   PIPELINE
+--------------------------------------------------------- */
+
+.step {
+    min-width: 90px;
+}
+
+.step-dot {
+    width: 30px;
+    height: 30px;
+
+    border-radius: 50%;
+
+    display: grid;
+    place-items: center;
+
+    background: #edf1f7;
+    color: #64748b;
+
+    font: 700 11px "JetBrains Mono";
+}
+
+.step.done .step-dot {
+    background: #2563eb;
+    color: #fff;
+}
+
+.step.active .step-dot {
+    background: #0f172a;
+    color: #fff;
+
+    box-shadow: 0 0 0 5px #dbeafe;
+}
+
+.conn {
+    height: 2px;
+    background: #e5eaf2;
+    flex: 1;
+}
+
+.conn.done {
+    background: #2563eb;
+}
+
+/* ---------------------------------------------------------
+   UPLOAD
+--------------------------------------------------------- */
+
+.drop {
+    border: 2px dashed #cdd7e6;
+    border-radius: 18px;
+
+    transition: 0.2s;
+}
+
+.drop:hover,
+.drop.drag {
+    border-color: #2563eb;
+    background: #eff6ff;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* ---------------------------------------------------------
+   BADGES
+--------------------------------------------------------- */
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+
+    border-radius: 999px;
+
+    padding: 5px 9px;
+
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.badge-blue {
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.badge-red {
+    background: #fef2f2;
+    color: #b91c1c;
+}
+
+.badge-green {
+    background: #ecfdf5;
+    color: #047857;
+}
+
+.badge-gray {
+    background: #f1f5f9;
+    color: #475569;
+}
+
+/* ---------------------------------------------------------
+   ATTRIBUTE CARDS
+--------------------------------------------------------- */
+
+.attr-grid {
+    display: grid;
+    grid-template-columns: repeat(
+        5,
+        minmax(0, 1fr)
+    );
+
+    gap: 8px;
+}
+
+.attr-card {
+    padding: 10px;
+
+    border: 1px solid var(--line);
+    border-radius: 12px;
+
+    background: #fbfcfe;
+}
+
+/* ---------------------------------------------------------
+   SHAP
+--------------------------------------------------------- */
+
+.shap-pos {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+}
+
+.shap-neg {
+    background: #fef2f2;
+    border-color: #fecaca;
+}
+
+/* ---------------------------------------------------------
+   RESPONSIVE
+--------------------------------------------------------- */
+
+@media(max-width: 700px) {
+
+    .grid160 {
+        gap: 3px;
+    }
+
+    .matrix-cell {
+        font-size: 8px;
+    }
+
+    .step {
+        min-width: 65px;
+    }
+
+    .attr-grid {
+        grid-template-columns: repeat(
+            2,
+            1fr
+        );
+    }
+}
+
+</style>
+</head>
+
+<body>
+
+<!-- =========================================================
+     HEADER
+========================================================= -->
+
+<header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-200">
+
+    <div
+        class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4"
+    >
+
+        <div>
+
+            <div class="font-extrabold text-lg sm:text-xl">
+
+                Spoofed Speech
+
+                <span class="text-blue-600">
+                    Attribution
+                </span>
+
+            </div>
+
+            <div class="text-xs text-slate-500">
+
+                Explainable Probabilistic Attribute Embedding
+                • ASVspoof 2019 LA
+
+            </div>
+
+        </div>
+
+        <div class="flex items-center gap-2 text-xs">
+
+            <span
+                id="serverDot"
+                class="w-2.5 h-2.5 rounded-full bg-slate-400"
+            ></span>
+
+            <span
+                id="serverStatus"
+                class="text-slate-500"
+            >
+                Checking backend…
+            </span>
+
+        </div>
+
+    </div>
+
+</header>
+
+
+<!-- =========================================================
+     MAIN
+========================================================= -->
+
+<main
+    class="max-w-7xl mx-auto px-4 sm:px-6 py-7 space-y-5"
+>
+
+
+<!-- =========================================================
+     UPLOAD SECTION
+========================================================= -->
+
+<section class="card p-5 sm:p-7">
+
+    <div
+        class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5"
+    >
+
+        <div>
+
+            <div class="badge badge-blue mb-2">
+                LIVE INFERENCE
+            </div>
+
+            <h1
+                class="text-2xl sm:text-3xl font-extrabold tracking-tight"
+            >
+                Upload an audio sample
+            </h1>
+
+            <p
+                class="text-sm text-slate-500 mt-2 max-w-2xl"
+            >
+                The browser sends the selected WAV/FLAC file
+                to FastAPI. The backend runs the existing
+                AASIST model, trained attribute detectors,
+                decision trees and SHAP explanation.
+            </p>
+
+        </div>
+
+
+        <div
+            class="text-xs mono text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3"
+        >
+
+            API
+
+            <br>
+
+            <span class="text-slate-800">
+                http://127.0.0.1:8000/analyze
+            </span>
+
+        </div>
+
+    </div>
+
+
+    <!-- DROP ZONE -->
+
+    <div
+        id="dropZone"
+        class="drop mt-6 p-8 sm:p-12 text-center cursor-pointer"
+    >
+
+        <input
+            id="fileInput"
+            type="file"
+            accept=".wav,.flac,audio/wav,audio/flac"
+            class="hidden"
+        >
+
+        <div
+            class="mx-auto w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 grid place-items-center text-2xl"
+        >
+            ↑
+        </div>
+
+        <div class="mt-4 font-bold">
+            Drop a WAV or FLAC file here
+        </div>
+
+        <div class="text-sm text-slate-500 mt-1">
+            or click to choose a file
+        </div>
+
+        <div
+            id="fileName"
+            class="mono text-xs text-blue-700 mt-4"
+        >
+            No file selected
+        </div>
+
+    </div>
+
+
+    <!-- BUTTONS -->
+
+    <div class="mt-4 flex flex-col sm:flex-row gap-3">
+
+        <button
+            id="analyzeBtn"
+            class="flex-1 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-3 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+            Run Live Inference
+        </button>
+
+        <button
+            id="clearBtn"
+            class="rounded-xl border border-slate-200 bg-white px-5 py-3 font-semibold text-slate-600"
+        >
+            Clear
+        </button>
+
+    </div>
+
+
+    <!-- AUDIO PREVIEW -->
+
+    <audio
+        id="audioPlayer"
+        controls
+        class="w-full mt-4 hidden"
+    ></audio>
+
+
+    <!-- ERROR -->
+
+    <div
+        id="errorBox"
+        class="hidden mt-4 rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm"
+    ></div>
+
+</section>
+
+
+<!-- =========================================================
+     PIPELINE TRACE
+========================================================= -->
+
+<section class="card p-5">
+
+    <div
+        class="flex items-center justify-between mb-4"
+    >
+
+        <h2 class="font-bold">
+            Neural Pipeline Trace
+        </h2>
+
+        <span
+            id="pipelineStatus"
+            class="badge badge-gray"
+        >
+            Standby
+        </span>
+
+    </div>
+
+
+    <div
+        class="flex items-center gap-2 overflow-x-auto pb-2"
+    >
+
+        <div
+            class="step"
+            id="step1"
+        >
+
+            <div class="step-dot">
+                01
+            </div>
+
+            <div class="text-xs mt-2 font-semibold">
+                Audio
+            </div>
+
+        </div>
+
+
+        <div
+            class="conn"
+            id="conn1"
+        ></div>
+
+
+        <div
+            class="step"
+            id="step2"
+        >
+
+            <div class="step-dot">
+                02
+            </div>
+
+            <div class="text-xs mt-2 font-semibold">
+                AASIST
+            </div>
+
+        </div>
+
+
+        <div
+            class="conn"
+            id="conn2"
+        ></div>
+
+
+        <div
+            class="step"
+            id="step3"
+        >
+
+            <div class="step-dot">
+                03
+            </div>
+
+            <div class="text-xs mt-2 font-semibold">
+                160-D
+            </div>
+
+        </div>
+
+
+        <div
+            class="conn"
+            id="conn3"
+        ></div>
+
+
+        <div
+            class="step"
+            id="step4"
+        >
+
+            <div class="step-dot">
+                04
+            </div>
+
+            <div class="text-xs mt-2 font-semibold">
+                AS1–AS7
+            </div>
+
+        </div>
+
+
+        <div
+            class="conn"
+            id="conn4"
+        ></div>
+
+
+        <div
+            class="step"
+            id="step5"
+        >
+
+            <div class="step-dot">
+                05
+            </div>
+
+            <div class="text-xs mt-2 font-semibold">
+                25-D
+            </div>
+
+        </div>
+
+
+        <div
+            class="conn"
+            id="conn5"
+        ></div>
+
+
+        <div
+            class="step"
+            id="step6"
+        >
+
+            <div class="step-dot">
+                06
+            </div>
+
+            <div class="text-xs mt-2 font-semibold">
+                Decision Tree
+            </div>
+
+        </div>
+
+
+        <div
+            class="conn"
+            id="conn6"
+        ></div>
+
+
+        <div
+            class="step"
+            id="step7"
+        >
+
+            <div class="step-dot">
+                07
+            </div>
+
+            <div class="text-xs mt-2 font-semibold">
+                Attack Tree
+            </div>
+
+        </div>
+
+
+        <div
+            class="conn"
+            id="conn7"
+        ></div>
+
+
+        <div
+            class="step"
+            id="step8"
+        >
+
+            <div class="step-dot">
+                08
+            </div>
+
+            <div class="text-xs mt-2 font-semibold">
+                SHAP
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <div
+        class="text-xs mono text-slate-500 mt-2"
+        id="latencyText"
+    >
+        Latency: —
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     RESULTS
+========================================================= -->
+
+<section
+    id="results"
+    class="hidden space-y-5"
+>
+
+
+<!-- =========================================================
+     PRIMARY RESULT
+========================================================= -->
+
+<section class="card p-5 sm:p-7">
+
+    <div
+        class="flex flex-col md:flex-row md:items-center md:justify-between gap-5"
+    >
+
+        <div>
+
+            <div
+                class="text-xs font-bold text-slate-400 uppercase tracking-widest"
+            >
+                Primary Result
+            </div>
+
+            <div
+                id="verdict"
+                class="text-4xl font-extrabold mt-2"
+            >
+                —
+            </div>
+
+            <div
+                id="verdictSub"
+                class="text-sm text-slate-500 mt-1"
+            >
+                —
+            </div>
+
+        </div>
+
+
+        <div
+            class="grid grid-cols-2 gap-3 w-full md:w-96"
+        >
+
+            <div
+                class="bg-slate-50 rounded-xl p-4"
+            >
+
+                <div class="text-xs text-slate-500">
+                    Bonafide
+                </div>
+
+                <div
+                    id="bonafideProb"
+                    class="text-2xl font-extrabold mt-1"
+                >
+                    —
+                </div>
+
+            </div>
+
+
+            <div
+                class="bg-slate-50 rounded-xl p-4"
+            >
+
+                <div class="text-xs text-slate-500">
+                    Spoof
+                </div>
+
+                <div
+                    id="spoofProb"
+                    class="text-2xl font-extrabold mt-1"
+                >
+                    —
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     160-D AASIST
+========================================================= -->
+
+<section class="card p-5">
+
+    <div
+        class="flex items-center justify-between"
+    >
+
+        <div>
+
+            <h2 class="font-bold">
+                160-D AASIST Latent Representation
+            </h2>
+
+            <p
+                class="text-xs text-slate-500 mt-1"
+            >
+                Actual representation captured immediately
+                before the AASIST output classifier.
+            </p>
+
+        </div>
+
+        <span
+            id="embeddingDims"
+            class="badge badge-blue"
+        >
+            —
+        </span>
+
+    </div>
+
+
+    <!-- MATRIX -->
+
+    <div
+        class="mt-4 overflow-x-auto pb-2"
+    >
+
+        <div
+            id="matrix"
+            class="grid160 min-w-[620px]"
+        ></div>
+
+    </div>
+
+
+    <!-- STATISTICS -->
+
+    <div
+        class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs"
+    >
+
+        <div
+            class="bg-slate-50 rounded-xl p-3"
+        >
+
+            Min
+
+            <div
+                id="embMin"
+                class="mono font-bold mt-1"
+            >
+                —
+            </div>
+
+        </div>
+
+
+        <div
+            class="bg-slate-50 rounded-xl p-3"
+        >
+
+            Max
+
+            <div
+                id="embMax"
+                class="mono font-bold mt-1"
+            >
+                —
+            </div>
+
+        </div>
+
+
+        <div
+            class="bg-slate-50 rounded-xl p-3"
+        >
+
+            Mean
+
+            <div
+                id="embMean"
+                class="mono font-bold mt-1"
+            >
+                —
+            </div>
+
+        </div>
+
+
+        <div
+            class="bg-slate-50 rounded-xl p-3"
+        >
+
+            Selected
+
+            <div
+                id="selectedDim"
+                class="mono font-bold mt-1"
+            >
+                Click a cell
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- RAW VALUES -->
+
+    <details class="mt-4">
+
+        <summary
+            class="cursor-pointer text-sm font-semibold"
+        >
+            Show all 160 raw values
+        </summary>
+
+        <div
+            id="rawEmbedding"
+            class="mt-3 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2"
+        ></div>
+
+    </details>
+
+</section>
+
+
+<!-- =========================================================
+     25-D ATTRIBUTE EMBEDDING
+========================================================= -->
+
+<section class="card p-5">
+
+    <div
+        class="flex items-center justify-between"
+    >
+
+        <div>
+
+            <h2 class="font-bold">
+                25-D Probabilistic Attribute Embedding
+            </h2>
+
+            <p
+                class="text-xs text-slate-500 mt-1"
+            >
+                Attribute probabilities produced by the
+                seven trained attribute detectors.
+            </p>
+
+        </div>
+
+        <span
+            id="attrDims"
+            class="badge badge-blue"
+        >
+            —
+        </span>
+
+    </div>
+
+
+    <div
+        id="attrGrid"
+        class="attr-grid mt-4"
+    ></div>
+
+</section>
+
+
+<!-- =========================================================
+     AS1-AS7
+========================================================= -->
+
+<section class="card p-5">
+
+    <h2 class="font-bold">
+        AS1–AS7 Attribute Detectors
+    </h2>
+
+    <div
+        id="groupGrid"
+        class="grid md:grid-cols-2 gap-3 mt-4"
+    ></div>
+
+</section>
+
+
+<!-- =========================================================
+     ATTACK ATTRIBUTION
+========================================================= -->
+
+<section class="card p-5">
+
+    <div
+        class="flex items-center justify-between"
+    >
+
+        <div>
+
+            <h2 class="font-bold">
+                Spoof Attack Attribution
+            </h2>
+
+            <p
+                class="text-xs text-slate-500 mt-1"
+            >
+                Shown only when the live decision is spoof.
+            </p>
+
+        </div>
+
+        <span
+            id="attackTag"
+            class="badge badge-gray"
+        >
+            —
+        </span>
+
+    </div>
+
+
+    <div
+        id="attackResult"
+        class="mt-4"
+    ></div>
+
+</section>
+
+
+<!-- =========================================================
+     SHAP
+========================================================= -->
+
+<section class="card p-5">
+
+    <div
+        class="flex items-center justify-between"
+    >
+
+        <div>
+
+            <h2 class="font-bold">
+                SHAP Explanation
+            </h2>
+
+            <p
+                class="text-xs text-slate-500 mt-1"
+            >
+                TreeExplainer values from the trained
+                attack decision tree.
+            </p>
+
+        </div>
+
+        <span class="badge badge-blue">
+            TreeExplainer
+        </span>
+
+    </div>
+
+
+    <div
+        id="shapList"
+        class="mt-4 space-y-2"
+    ></div>
+
+</section>
+
+
+<!-- =========================================================
+     SAMPLE VERIFICATION
+========================================================= -->
+
+<section class="card p-5">
+
+    <h2 class="font-bold">
+        Sample Verification
+    </h2>
+
+
+    <div
+        class="grid sm:grid-cols-3 gap-3 mt-4"
+    >
+
+        <div
+            class="bg-slate-50 rounded-xl p-4"
+        >
+
+            <div class="text-xs text-slate-500">
+                Ground Truth
+            </div>
+
+            <div
+                id="groundTruth"
+                class="font-bold mt-1"
+            >
+                Unavailable
+            </div>
+
+        </div>
+
+
+        <div
+            class="bg-slate-50 rounded-xl p-4"
+        >
+
+            <div class="text-xs text-slate-500">
+                Prediction
+            </div>
+
+            <div
+                id="samplePrediction"
+                class="font-bold mt-1"
+            >
+                —
+            </div>
+
+        </div>
+
+
+        <div
+            class="bg-slate-50 rounded-xl p-4"
+        >
+
+            <div class="text-xs text-slate-500">
+                Device
+            </div>
+
+            <div
+                id="deviceText"
+                class="mono text-xs font-bold mt-1"
+            >
+                —
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <p
+        class="text-xs text-slate-500 mt-3"
+    >
+        For an arbitrary uploaded recording, ground truth is
+        not known automatically. No TP/TN/FP/FN values are fabricated.
+    </p>
+
+</section>
+
+
+</section>
+
+</main>
+
+
+<!-- =========================================================
+     JAVASCRIPT
+========================================================= -->
+
+<script>
+
+const API_BASE =
+    "http://127.0.0.1:8000";
+
+
+let selectedFile = null;
+
+let currentResult = null;
+
+
+/* ---------------------------------------------------------
+   HELPERS
+--------------------------------------------------------- */
+
+const $ = id =>
+    document.getElementById(id);
+
+
+const pct = x => {
+    let p = Number(x || 0) * 100;
+    if (p > 99.99 && p < 100) p = 99.99;
+    if (p < 0.01 && p > 0) p = 0.01;
+    return `${p.toFixed(2)}%`;
+};
+
+
+const esc = s =>
+    String(s ?? "").replace(
+        /[&<>"']/g,
+        c => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;"
+        }[c])
+    );
+
+
+/* ---------------------------------------------------------
+   BACKEND STATUS
+--------------------------------------------------------- */
+
+function setServer(ok, text) {
+
+    $("serverDot").className =
+        `w-2.5 h-2.5 rounded-full ${
+            ok
+                ? "bg-emerald-500"
+                : "bg-red-400"
+        }`;
+
+    $("serverStatus").textContent =
+        text;
+}
+
+
+async function checkHealth() {
+
+    try {
+
+        const response =
+            await fetch(
+                `${API_BASE}/health`
+            );
+
+        if (!response.ok) {
+            throw new Error();
+        }
+
+        const data =
+            await response.json();
+
+        setServer(
+            true,
+            `Backend online • ${data.device}`
+        );
+
+    }
+
+    catch {
+
+        setServer(
+            false,
+            "Backend offline"
+        );
+
+    }
+
+}
+
+
+/* ---------------------------------------------------------
+   FILE SELECTION
+--------------------------------------------------------- */
+
+function setFile(file) {
+
+    if (!file) {
+        return;
+    }
+
+
+    const extension =
+        file.name
+            .toLowerCase()
+            .split(".")
+            .pop();
+
+
+    if (
+        !["wav", "flac"]
+            .includes(extension)
+    ) {
+
+        showError(
+            "Only WAV and FLAC files are supported."
+        );
+
+        return;
+    }
+
+
+    selectedFile =
+        file;
+
+
+    $("fileName").textContent =
+        file.name;
+
+
+    $("fileName").className =
+        "mono text-xs text-emerald-700 mt-4";
+
+
+    $("audioPlayer").src =
+        URL.createObjectURL(file);
+
+
+    $("audioPlayer")
+        .classList
+        .remove("hidden");
+
+
+    hideError();
+
+}
+
+
+/* ---------------------------------------------------------
+   ERROR
+--------------------------------------------------------- */
+
+function showError(msg) {
+
+    $("errorBox").textContent =
+        msg;
+
+    $("errorBox")
+        .classList
+        .remove("hidden");
+
+}
+
+
+function hideError() {
+
+    $("errorBox")
+        .classList
+        .add("hidden");
+
+}
+
+
+/* ---------------------------------------------------------
+   PIPELINE
+--------------------------------------------------------- */
+
+function resetPipeline() {
+
+    for (
+        let i = 1;
+        i <= 8;
+        i++
+    ) {
+
+        $("step" + i)
+            .classList
+            .remove(
+                "done",
+                "active"
+            );
+
+    }
+
+
+    for (
+        let i = 1;
+        i <= 7;
+        i++
+    ) {
+
+        $("conn" + i)
+            .classList
+            .remove("done");
+
+    }
+
+
+    $("pipelineStatus")
+        .textContent =
+        "Standby";
+
+
+    $("pipelineStatus")
+        .className =
+        "badge badge-gray";
+
+}
+
+
+function markPipeline(n) {
+
+    for (
+        let i = 1;
+        i <= 8;
+        i++
+    ) {
+
+        const element =
+            $("step" + i);
+
+
+        if (i < n) {
+
+            element
+                .classList
+                .add("done");
+
+            element
+                .classList
+                .remove("active");
+
+        }
+
+        else if (i === n) {
+
+            element
+                .classList
+                .add("active");
+
+        }
+
+        else {
+
+            element
+                .classList
+                .remove(
+                    "done",
+                    "active"
+                );
+
+        }
+
+    }
+
+
+    for (
+        let i = 1;
+        i <= 7;
+        i++
+    ) {
+
+        if (i < n) {
+
+            $("conn" + i)
+                .classList
+                .add("done");
+
+        }
+
+    }
+
+}
+
+
+function finishPipeline() {
+
+    for (
+        let i = 1;
+        i <= 8;
+        i++
+    ) {
+
+        $("step" + i)
+            .classList
+            .add("done");
+
+    }
+
+
+    for (
+        let i = 1;
+        i <= 7;
+        i++
+    ) {
+
+        $("conn" + i)
+            .classList
+            .add("done");
+
+    }
+
+
+    $("pipelineStatus")
+        .textContent =
+        "Complete";
+
+
+    $("pipelineStatus")
+        .className =
+        "badge badge-green";
+
+}
+
+
+/* ---------------------------------------------------------
+   160-D MATRIX COLOR
+--------------------------------------------------------- */
+
+function matrixColor(
+    value,
+    min,
+    max
+) {
+
+    const scale =
+        Math.max(
+            Math.abs(min),
+            Math.abs(max),
+            1e-12
+        );
+
+
+    const normalized =
+        Math.max(
+            -1,
+            Math.min(
+                1,
+                value / scale
+            )
+        );
+
+
+    if (
+        normalized >= 0
+    ) {
+
+        const alpha =
+            0.10 +
+            0.70 *
+            normalized;
+
+
+        return `
+            rgba(
+                239,
+                68,
+                68,
+                ${alpha}
+            )
+        `;
+
+    }
+
+
+    const alpha =
+        0.10 +
+        0.70 *
+        Math.abs(
+            normalized
+        );
+
+
+    return `
+        rgba(
+            37,
+            99,
+            235,
+            ${alpha}
+        )
+    `;
+
+}
+
+
+/* ---------------------------------------------------------
+   RENDER 160-D EMBEDDING
+--------------------------------------------------------- */
+
+function renderEmbedding(
+    values
+) {
+
+    const numericValues =
+        (values || [])
+            .map(Number)
+            .filter(
+                Number.isFinite
+            );
+
+
+    $("embeddingDims")
+        .textContent =
+        `${values?.length || 0}-D`;
+
+
+    /*
+       IMPORTANT:
+       The live backend must return
+       exactly 160 dimensions.
+    */
+
+    if (
+        numericValues.length !== 160
+    ) {
+
+        $("matrix").innerHTML = `
+
+            <div
+                class="
+                    col-span-16
+                    rounded-xl
+                    bg-red-50
+                    border
+                    border-red-200
+                    p-4
+                    text-sm
+                    text-red-700
+                "
+            >
+
+                Warning:
+                backend returned
+                ${numericValues.length}
+                dimensions.
+
+                Expected exactly 160.
+
+            </div>
+
+        `;
+
+        return;
+
+    }
+
+
+    const min =
+        Math.min(
+            ...numericValues
+        );
+
+
+    const max =
+        Math.max(
+            ...numericValues
+        );
+
+
+    const mean =
+        numericValues.reduce(
+            (sum, value) =>
+                sum + value,
+            0
+        )
+        /
+        numericValues.length;
+
+
+    $("embMin")
+        .textContent =
+        min.toFixed(6);
+
+
+    $("embMax")
+        .textContent =
+        max.toFixed(6);
+
+
+    $("embMean")
+        .textContent =
+        mean.toFixed(6);
+
+
+    $("matrix").innerHTML =
+        "";
+
+
+    /*
+       10 x 16 matrix
+       = 160 dimensions
+    */
+
+    numericValues.forEach(
+        (value, index) => {
+
+            const dimension =
+                index + 1;
+
+
+            const cell =
+                document.createElement(
+                    "button"
+                );
+
+
+            cell.className =
+                "matrix-cell";
+
+
+            cell.style.background =
+                matrixColor(
+                    value,
+                    min,
+                    max
+                );
+
+
+            cell.title =
+                `Dimension D${
+                    String(
+                        dimension
+                    ).padStart(
+                        3,
+                        "0"
+                    )
+                }: ${
+                    value.toFixed(8)
+                }`;
+
+
+            cell.textContent =
+                dimension;
+
+
+            cell.onclick = () => {
+
+                $("selectedDim")
+                    .textContent =
+                    `D${
+                        String(
+                            dimension
+                        ).padStart(
+                            3,
+                            "0"
+                        )
+                    } = ${
+                        value.toFixed(8)
+                    }`;
+
+            };
+
+
+            $("matrix")
+                .appendChild(
+                    cell
+                );
+
+        }
+    );
+
+
+    /*
+       Raw 160 values
+    */
+
+    $("rawEmbedding")
+        .innerHTML =
+        numericValues
+            .map(
+                (value, index) => `
+
+                    <div
+                        class="
+                            rounded-lg
+                            border
+                            border-slate-200
+                            bg-slate-50
+                            px-2
+                            py-2
+                            mono
+                            text-[10px]
+                        "
+                    >
+
+                        <b>
+                            D${
+                                String(
+                                    index + 1
+                                ).padStart(
+                                    3,
+                                    "0"
+                                )
+                            }
+                        </b>
+
+                        <br>
+
+                        ${value.toFixed(8)}
+
+                    </div>
+
+                `
+            )
+            .join("");
+
+}
+
+
+/* ---------------------------------------------------------
+   ATTRIBUTE LABELS MAPPING (S01–S25)
+--------------------------------------------------------- */
+
+const ATTRIBUTE_LABELS = {
+    "S01": "Text-Based Input",
+    "S02": "Human Speech Input",
+    "S03": "NLP-Based Processing",
+    "S04": "WORLD Vocoder",
+    "S05": "LPCC/MFCC Features",
+    "S06": "HMM-Based Duration Modeling",
+    "S07": "Feed-Forward Duration Modeling",
+    "S08": "No Duration Model",
+    "S09": "Autoregressive RNN (AR-RNN)",
+    "S10": "Feed-Forward Conversion",
+    "S11": "CART-Based Conversion",
+    "S12": "VAE-Based Conversion",
+    "S13": "GMM-UBM-Based Conversion",
+    "S14": "VAE-Based Speaker Representation",
+    "S15": "One-Hot Speaker Representation",
+    "S16": "No Speaker Representation",
+    "S17": "MFCC + F0",
+    "S18": "MFCC + F0 + BAP",
+    "S19": "MFCC + F0 (Alternative Configuration)",
+    "S20": "MFCC + F0 + AP",
+    "S21": "LPC Features",
+    "S22": "WaveNet-Based Waveform Generation",
+    "S23": "WORLD-Based Waveform Generation",
+    "S24": "Waveform Concatenation",
+    "S25": "Spectral Filtering + Overlap-Add (OLA)"
+};
+
+const getAttributeName = key => ATTRIBUTE_LABELS[key] || key;
+
+
+/* ---------------------------------------------------------
+   RENDER ATTRIBUTES
+--------------------------------------------------------- */
+
+function renderAttributes(
+    data
+) {
+
+    const attributes =
+        data.attributes || {};
+
+
+    const names =
+        Object.keys(
+            attributes
+        )
+        .sort(
+            (a, b) =>
+                Number(
+                    a.slice(1)
+                )
+                -
+                Number(
+                    b.slice(1)
+                )
+        );
+
+
+    $("attrDims")
+        .textContent =
+        `${names.length}-D`;
+
+
+    $("attrGrid")
+        .innerHTML =
+        names
+            .map(
+                name => {
+
+                    const value =
+                        Number(
+                            attributes[
+                                name
+                            ]
+                        );
+
+                    const label =
+                        getAttributeName(name);
+
+                    return `
+
+                        <div
+                            class="attr-card"
+                            title="${esc(name)}: ${esc(label)}"
+                        >
+
+                            <div
+                                class="
+                                    flex
+                                    justify-between
+                                    items-start
+                                    gap-2
+                                    text-xs
+                                    font-bold
+                                "
+                            >
+
+                                <span
+                                    class="
+                                        break-words
+                                        leading-tight
+                                    "
+                                >
+                                    ${esc(label)}
+                                </span>
+
+                                <span
+                                    class="
+                                        shrink-0
+                                        mono
+                                    "
+                                >
+                                    ${pct(value)}
+                                </span>
+
+                            </div>
+
+
+                            <div
+                                class="progress mt-2"
+                            >
+
+                                <div
+                                    style="
+                                        width:
+                                        ${Math.max(
+                                            0,
+                                            Math.min(
+                                                100,
+                                                value * 100
+                                            )
+                                        )}%
+                                    "
+                                ></div>
+
+                            </div>
+
+                        </div>
+
+                    `;
+
+                }
+            )
+            .join("");
+
+
+    /*
+       AS1-AS7
+    */
+
+    const groups =
+        data.group_attributes ||
+        {};
+
+
+    $("groupGrid")
+        .innerHTML =
+        Object.entries(
+            groups
+        )
+        .map(
+            ([group, object]) => {
+
+                const entries =
+                    Object.entries(
+                        object
+                    );
+
+
+                if (
+                    entries.length === 0
+                ) {
+
+                    return `
+
+                        <div
+                            class="
+                                border
+                                border-slate-200
+                                rounded-xl
+                                p-4
+                            "
+                        >
+
+                            <b>
+                                ${esc(group)}
+                            </b>
+
+                            <div
+                                class="
+                                    text-xs
+                                    text-slate-500
+                                    mt-2
+                                "
+                            >
+                                No probabilities returned.
+                            </div>
+
+                        </div>
+
+                    `;
+
+                }
+
+
+                const best =
+                    entries.reduce(
+                        (a, b) =>
+                            Number(b[1])
+                            >
+                            Number(a[1])
+                                ? b
+                                : a,
+                        entries[0]
+                    );
+
+                const bestLabel =
+                    getAttributeName(best[0]);
+
+                return `
+
+                    <div
+                        class="
+                            border
+                            border-slate-200
+                            rounded-xl
+                            p-4
+                        "
+                    >
+
+                        <div
+                            class="
+                                flex
+                                justify-between
+                                gap-2
+                                items-center
+                            "
+                        >
+
+                            <b>
+                                ${esc(group)}
+                            </b>
+
+                            <span
+                                class="badge badge-blue truncate"
+                                title="Top: ${esc(best[0])} — ${esc(bestLabel)}"
+                            >
+
+                                Top
+                                ${esc(bestLabel)}:
+                                ${pct(best[1])}
+
+                            </span>
+
+                        </div>
+
+
+                        <div
+                            class="
+                                mt-3
+                                space-y-2
+                            "
+                        >
+
+                            ${entries
+                                .map(
+                                    ([key, value]) => {
+
+                                        const label =
+                                            getAttributeName(key);
+
+                                        return `
+
+                                        <div>
+
+                                            <div
+                                                class="
+                                                    flex
+                                                    justify-between
+                                                    items-start
+                                                    gap-2
+                                                    text-[11px]
+                                                "
+                                                title="${esc(key)}: ${esc(label)}"
+                                            >
+
+                                                <span
+                                                    class="
+                                                        break-words
+                                                        leading-tight
+                                                    "
+                                                >
+                                                    ${esc(label)}
+                                                </span>
+
+                                                <span
+                                                    class="
+                                                        shrink-0
+                                                        mono
+                                                        font-semibold
+                                                    "
+                                                >
+                                                    ${pct(value)}
+                                                </span>
+
+                                            </div>
+
+
+                                            <div
+                                                class="
+                                                    progress
+                                                    mt-1
+                                                "
+                                            >
+
+                                                <div
+                                                    style="
+                                                        width:
+                                                        ${Math.max(
+                                                            0,
+                                                            Math.min(
+                                                                100,
+                                                                Number(value)
+                                                                * 100
+                                                            )
+                                                        )}%
+                                                    "
+                                                ></div>
+
+                                            </div>
+
+                                        </div>
+
+                                    `;
+                                    }
+                                )
+                                .join("")}
+
+                        </div>
+
+                    </div>
+
+                `;
+
+            }
+        )
+        .join("");
+
+}
+
+
+/* ---------------------------------------------------------
+   ATTACK ATTRIBUTION
+--------------------------------------------------------- */
+
+function renderAttack(
+    data,
+    isSpoof
+) {
+
+
+    /*
+       Bonafide:
+       attack attribution is not applicable.
+    */
+
+    if (!isSpoof) {
+
+        $("attackTag")
+            .textContent =
+            "Not applicable";
+
+
+        $("attackTag")
+            .className =
+            "badge badge-gray";
+
+
+        $("attackResult")
+            .innerHTML = `
+
+                <div
+                    class="
+                        rounded-xl
+                        bg-emerald-50
+                        border
+                        border-emerald-200
+                        p-4
+                        text-sm
+                        text-emerald-700
+                    "
+                >
+
+                    The live decision is
+                    bonafide, so spoof attack
+                    attribution is not run.
+
+                </div>
+
+            `;
+
+
+        return;
+
+    }
+
+
+    const prediction =
+        data.attack_prediction ??
+        "—";
+
+
+    $("attackTag")
+        .textContent =
+        `${prediction}`;
+
+
+    $("attackTag")
+        .className =
+        "badge badge-red";
+
+
+    const probabilities =
+        Object.entries(
+            data.attack_probabilities ||
+            {}
+        )
+        .sort(
+            (a, b) =>
+                Number(b[1])
+                -
+                Number(a[1])
+        );
+
+
+    $("attackResult")
+        .innerHTML = `
+
+            <div
+                class="
+                    text-2xl
+                    font-extrabold
+                "
+            >
+
+                Attack class:
+                ${esc(prediction)}
+
+            </div>
+
+
+            <div
+                class="
+                    text-sm
+                    text-slate-500
+                    mt-1
+                "
+            >
+
+                Confidence:
+
+                ${
+                    data.attack_confidence ==
+                    null
+
+                    ? "—"
+
+                    : pct(
+                        data.attack_confidence
+                    )
+                }
+
+            </div>
+
+
+            <div
+                class="
+                    mt-4
+                    space-y-2
+                "
+            >
+
+                ${probabilities
+                    .slice(0, 8)
+                    .map(
+                        ([key, value]) => `
+
+                            <div>
+
+                                <div
+                                    class="
+                                        flex
+                                        justify-between
+                                        text-xs
+                                        mono
+                                    "
+                                >
+
+                                    <span>
+                                        ${esc(key)}
+                                    </span>
+
+                                    <span>
+                                        ${pct(value)}
+                                    </span>
+
+                                </div>
+
+
+                                <div
+                                    class="
+                                        progress
+                                        mt-1
+                                    "
+                                >
+
+                                    <div
+                                        style="
+                                            width:
+                                            ${Math.max(
+                                                0,
+                                                Math.min(
+                                                    100,
+                                                    Number(value)
+                                                    * 100
+                                                )
+                                            )}%
+                                        "
+                                    ></div>
+
+                                </div>
+
+                            </div>
+
+                        `
+                    )
+                    .join("")}
+
+            </div>
+
+        `;
+
+}
+
+
+/* ---------------------------------------------------------
+   SHAP
+--------------------------------------------------------- */
+
+function renderShap(
+    data
+) {
+
+    const top =
+        (
+            data.top_shap ||
+            []
+        )
+        .slice(
+            0,
+            10
+        );
+
+
+    if (
+        !top.length
+    ) {
+
+        $("shapList")
+            .innerHTML = `
+
+                <div
+                    class="
+                        text-sm
+                        text-slate-500
+                    "
+                >
+
+                    No SHAP values were
+                    returned for this sample.
+
+                </div>
+
+            `;
+
+        return;
+
+    }
+
+
+    $("shapList")
+        .innerHTML =
+        top
+            .map(
+                item => {
+
+                    const value =
+                        Number(
+                            item.value
+                        );
+
+                    const label =
+                        getAttributeName(
+                            item.feature
+                        );
+
+                    return `
+
+                        <div
+                            class="
+                                flex
+                                items-center
+                                justify-between
+                                gap-3
+                                rounded-xl
+                                border
+                                ${
+                                    value >= 0
+                                        ? "shap-pos"
+                                        : "shap-neg"
+                                }
+                                px-4
+                                py-3
+                            "
+                            title="${esc(item.feature)}: ${esc(label)}"
+                        >
+
+                            <div>
+
+                                <b
+                                    class="
+                                        font-semibold
+                                        text-slate-900
+                                    "
+                                >
+                                    ${esc(
+                                        label
+                                    )}
+                                </b>
+
+                                <div
+                                    class="
+                                        text-[11px]
+                                        text-slate-500
+                                    "
+                                >
+                                    Attribute contribution
+                                </div>
+
+                            </div>
+
+
+                            <div
+                                class="
+                                    mono
+                                    font-bold
+                                    shrink-0
+                                    ${
+                                        value >= 0
+                                            ? "text-emerald-700"
+                                            : "text-red-700"
+                                    }
+                                "
+                            >
+
+                                ${
+                                    value >= 0
+                                        ? "+"
+                                        : ""
+                                }${value.toFixed(6)}
+
+                            </div>
+
+                        </div>
+
+                    `;
+
+                }
+            )
+            .join("");
+
+}
+
+
+/* ---------------------------------------------------------
+   COMPLETE RESULT
+--------------------------------------------------------- */
+
+function renderResult(
+    data
+) {
+
+    currentResult =
+        data;
+
+
+    $("results")
+        .classList
+        .remove("hidden");
+
+
+    /*
+       Use the backend's own prediction
+       instead of re-deriving from
+       probabilities — this ensures the
+       UI matches the decision tree.
+    */
+
+    const predLower = (
+        String(
+            data.prediction ?? ""
+        ).toLowerCase()
+    );
+
+
+    const spoof = (
+        predLower === "1"
+        || predLower === "spoof"
+        || predLower === "true"
+    );
+
+
+    const bonafideProb =
+        Number(
+            data.bonafide_probability
+        ) || 0;
+
+
+    const spoofProb =
+        Number(
+            data.spoof_probability
+        ) || 0;
+
+
+    /*
+       Confidence = the probability
+       assigned to the predicted class.
+    */
+
+    const confidence = spoof
+        ? spoofProb
+        : bonafideProb;
+
+
+    /*
+       Main verdict
+    */
+
+    $("verdict")
+        .textContent =
+        spoof
+            ? "SPOOF"
+            : "BONAFIDE";
+
+
+    $("verdict")
+        .className =
+        `
+            text-4xl
+            font-extrabold
+            mt-2
+            ${
+                spoof
+                    ? "text-red-600"
+                    : "text-emerald-600"
+            }
+        `;
+
+
+    $("verdictSub")
+        .textContent =
+        `Decision tree confidence: ${
+            pct(confidence)
+        }`;
+
+
+    $("bonafideProb")
+        .textContent =
+        pct(bonafideProb);
+
+
+    $("spoofProb")
+        .textContent =
+        pct(spoofProb);
+
+
+    $("latencyText")
+        .textContent =
+        `Latency: ${
+            data.latency_ms == null
+                ? "—"
+                : Number(
+                    data.latency_ms
+                ).toFixed(2)
+                + " ms"
+        }`;
+
+
+    /*
+       Ground truth is intentionally
+       unavailable for arbitrary uploads.
+    */
+
+    $("groundTruth")
+        .textContent =
+        data.ground_truth == null
+            ? "Unavailable"
+            : data.ground_truth;
+
+
+    $("samplePrediction")
+        .textContent =
+        data.prediction ??
+        "—";
+
+
+    $("deviceText")
+        .textContent =
+        data.device ??
+        "—";
+
+
+    /*
+       Render all live data
+    */
+
+    renderEmbedding(
+        data.embedding ||
+        data.aasist_embedding
+    );
+
+
+    renderAttributes(
+        data
+    );
+
+
+    renderAttack(
+        data,
+        spoof
+    );
+
+
+    renderShap(
+        data
+    );
+
+}
+
+
+/* ---------------------------------------------------------
+   LIVE INFERENCE
+--------------------------------------------------------- */
+
+async function runInference() {
+
+    if (!selectedFile) {
+
+        showError(
+            "Choose a WAV or FLAC file first."
+        );
+
+        return;
+
+    }
+
+
+    hideError();
+
+
+    $("analyzeBtn")
+        .disabled =
+        true;
+
+
+    $("analyzeBtn")
+        .textContent =
+        "Running live inference…";
+
+
+    $("pipelineStatus")
+        .textContent =
+        "Running";
+
+
+    $("pipelineStatus")
+        .className =
+        "badge badge-blue";
+
+
+    $("results")
+        .classList
+        .add("hidden");
+
+
+    try {
+
+        /*
+           These first three stages are
+           only UI progress indicators.
+
+           Actual model inference happens
+           inside FastAPI.
+        */
+
+        markPipeline(1);
+
+        await new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    80
+                )
+        );
+
+
+        markPipeline(2);
+
+        await new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    80
+                )
+        );
+
+
+        markPipeline(3);
+
+
+        /*
+           Send actual audio to FastAPI.
+        */
+
+        const formData =
+            new FormData();
+
+
+        formData.append(
+            "file",
+            selectedFile,
+            selectedFile.name
+        );
+
+
+        const response =
+            await fetch(
+                `${API_BASE}/analyze`,
+                {
+                    method: "POST",
+                    body: formData
+                }
+            );
+
+
+        if (!response.ok) {
+
+            let detail =
+                "Backend inference failed.";
+
+
+            try {
+
+                const errorData =
+                    await response.json();
+
+
+                detail =
+                    errorData.detail ||
+                    detail;
+
+            }
+
+            catch {
+
+                // Ignore JSON parsing failure.
+
+            }
+
+
+            throw new Error(
+                detail
+            );
+
+        }
+
+
+        /*
+           Actual backend JSON.
+        */
+
+        const data =
+            await response.json();
+
+
+        markPipeline(4);
+
+
+        await new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    50
+                )
+        );
+
+
+        markPipeline(5);
+
+
+        await new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    50
+                )
+        );
+
+
+        markPipeline(6);
+
+
+        await new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    50
+                )
+        );
+
+
+        markPipeline(7);
+
+
+        await new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    50
+                )
+        );
+
+
+        markPipeline(8);
+
+
+        finishPipeline();
+
+
+        renderResult(
+            data
+        );
+
+    }
+
+
+    catch (error) {
+
+        resetPipeline();
+
+
+        showError(
+            error.message ||
+            String(error)
+        );
+
+    }
+
+
+    finally {
+
+        $("analyzeBtn")
+            .disabled =
+            false;
+
+
+        $("analyzeBtn")
+            .textContent =
+            "Run Live Inference";
+
+
+        checkHealth();
+
+    }
+
+}
+
+
+/* ---------------------------------------------------------
+   FILE DROP / SELECT
+--------------------------------------------------------- */
+
+$("dropZone").onclick =
+    () =>
+        $("fileInput").click();
+
+
+$("dropZone").ondragover =
+    event => {
+
+        event.preventDefault();
+
+        $("dropZone")
+            .classList
+            .add("drag");
+
+    };
+
+
+$("dropZone").ondragleave =
+    () => {
+
+        $("dropZone")
+            .classList
+            .remove("drag");
+
+    };
+
+
+$("dropZone").ondrop =
+    event => {
+
+        event.preventDefault();
+
+        $("dropZone")
+            .classList
+            .remove("drag");
+
+
+        setFile(
+            event.dataTransfer.files[0]
+        );
+
+    };
+
+
+$("fileInput").onchange =
+    event => {
+
+        setFile(
+            event.target.files[0]
+        );
+
+    };
+
+
+$("analyzeBtn").onclick =
+    runInference;
+
+
+/* ---------------------------------------------------------
+   CLEAR
+--------------------------------------------------------- */
+
+$("clearBtn").onclick =
+    () => {
+
+        selectedFile =
+            null;
+
+
+        currentResult =
+            null;
+
+
+        $("fileInput")
+            .value =
+            "";
+
+
+        $("fileName")
+            .textContent =
+            "No file selected";
+
+
+        $("fileName")
+            .className =
+            "mono text-xs text-blue-700 mt-4";
+
+
+        $("audioPlayer")
+            .classList
+            .add("hidden");
+
+
+        $("audioPlayer")
+            .removeAttribute(
+                "src"
+            );
+
+
+        $("results")
+            .classList
+            .add("hidden");
+
+
+        hideError();
+
+
+        resetPipeline();
+
+    };
+
+
+/* ---------------------------------------------------------
+   INITIAL BACKEND CHECK
+--------------------------------------------------------- */
+
+checkHealth();
+
+
+/*
+   Check backend every 5 seconds.
+*/
+
+setInterval(
+    checkHealth,
+    5000
+);
+
+</script>
+
+</body>
+</html>
